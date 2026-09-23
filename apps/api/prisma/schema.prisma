@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConsentStatus {
+  PENDING
+  AUTHORISED
+  REJECTED
+  REVOKED
+  EXPIRED
+  ERROR
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum SyncJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  PAYMENT
+  OTHER
+}
+
+enum ConnectionKind {
+  PLUGGY
+  MANUAL
+  MOCK
+  SANTANDER
+  PAMCARD
+}
+
+model User {
+  connections  ProviderConnection[]
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(254)
+  passwordHash String    @map("password_hash")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  sessions     Session[]
+  accounts     Account[]
+  consents     Consent[]
+  categories   Category[]
+  auditLogs    AuditLog[]
+  payables     Payable[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model Institution {
+  id          String         @id @default(uuid()) @db.Uuid
+  code        String         @unique @db.VarChar(80)
+  name        String         @db.VarChar(160)
+  kind        ConnectionKind
+  enabled     Boolean        @default(false)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  accounts    Account[]
+  consents    Consent[]
+
+  @@map("institutions")
+}
+
+model Consent {
+  id                    String        @id @default(uuid()) @db.Uuid
+  userId                String        @map("user_id") @db.Uuid
+  institutionId         String        @map("institution_id") @db.Uuid
+  externalConsentId     String?       @map("external_consent_id") @db.VarChar(255)
+  status                ConsentStatus @default(PENDING)
+  scopes                String[]
+  authorisedAt          DateTime?     @map("authorised_at")
+  expiresAt             DateTime?     @map("expires_at")
+  revokedAt             DateTime?     @map("revoked_at")
+  accessTokenCiphertext String?       @map("access_token_ciphertext")
+  refreshTokenCiphertext String?      @map("refresh_token_ciphertext")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  user                   User          @relation(fields: [userId], references: [id])
+  institution            Institution   @relation(fields: [institutionId], references: [id])
+  syncJobs               SyncJob[]
+
+  @@unique([institutionId, externalConsentId])
+  @@index([userId, status])
+  @@map("consents")
+}
+
+model Account {
+  source              String      @default("manual")
+  connectionId        String?     @map("connection_id") @db.Uuid
+  connection          ProviderConnection? @relation(fields: [connectionId], references: [id])
+  id                  String      @id @default(uuid()) @db.Uuid
+  userId              String      @map("user_id") @db.Uuid
+  institutionId       String      @map("institution_id") @db.Uuid
+  externalId          String      @map("external_id") @db.VarChar(255)
+  type                AccountType
+  displayName         String      @map("display_name") @db.VarChar(120)
+  maskedNumber        String?     @map("masked_number") @db.VarChar(32)
+  currency            String      @default("BRL") @db.Char(3)
+  balance             Decimal?    @db.Decimal(19, 4)
+  lastSyncedAt        DateTime?   @map("last_synced_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+  deletedAt           DateTime?   @map("deleted_at")
+  user                User        @relation(fields: [userId], references: [id])
+  institution         Institution @relation(fields: [institutionId], references: [id])
+  transactions        Transaction[]
+  cards               Card[]
+
+  @@unique([institutionId, externalId])
+  @@index([userId, deletedAt])
+  @@map("accounts")
+}
+
+model Category {
+  budget      Decimal               @default(0) @db.Decimal(19, 4)
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String?               @map("user_id") @db.Uuid
+  name        String                @db.VarChar(80)
+  parentId    String?               @map("parent_id") @db.Uuid
+  isSystem    Boolean               @default(false) @map("is_system")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  deletedAt   DateTime?             @map("deleted_at")
+  user        User?                 @relation(fields: [userId], references: [id])
+  parent      Category?             @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[]            @relation("CategoryTree")
+  transactions TransactionCategory[]
+  rules       CategorizationRule[]
+  payables    Payable[]
+
+  @@unique([userId, name, parentId])
+  @@index([userId, deletedAt])
+  @@map("categories")
+}
+
+model Payable {
+  id               String               @id @default(uuid()) @db.Uuid
+  userId           String               @map("user_id") @db.Uuid
+  categoryId       String?              @map("category_id") @db.Uuid
+  title            String               @db.VarChar(160)
+  payee            String?              @db.VarChar(160)
+  totalAmount      Decimal              @map("total_amount") @db.Decimal(19, 4)
+  installmentCount Int                  @map("installment_count")
+  frequency        String               @default("MONTHLY") @db.VarChar(20)
+  notes            String?              @db.VarChar(1000)
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category         Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  installments     PayableInstallment[]
+
+  @@index([userId, createdAt])
+  @@map("payables")
+}
+
+model PayableInstallment {
+  id          String    @id @default(uuid()) @db.Uuid
+  payableId   String    @map("payable_id") @db.Uuid
+  number      Int
+  dueDate     DateTime  @map("due_date") @db.Date
+  amount      Decimal   @db.Decimal(19, 4)
+  status      String    @default("PENDING") @db.VarChar(20)
+  paidAt      DateTime? @map("paid_at") @db.Date
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  payable     Payable   @relation(fields: [payableId], references: [id], onDelete: Cascade)
+
+  @@unique([payableId, number])
+  @@index([dueDate, status])
+  @@map("payable_installments")
+}
+
+model Transaction {
+  id                  String          @id @default(uuid()) @db.Uuid
+  accountId           String          @map("account_id") @db.Uuid
+  externalId          String?         @map("external_id") @db.VarChar(255)
+  deduplicationKey    String          @map("deduplication_key") @db.Char(64)
+  bookedAt            DateTime        @map("booked_at")
+  amount              Decimal         @db.Decimal(19, 4)
+  currency            String          @default("BRL") @db.Char(3)
+  type                TransactionType
+  description         String          @db.VarChar(500)
+  merchant            String?         @db.VarChar(255)
+  source              String          @db.VarChar(80)
+  paymentMethod       String?         @map("payment_method") @db.VarChar(80)
+  syncedAt            DateTime        @default(now()) @map("synced_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  deletedAt           DateTime?       @map("deleted_at")
+  account             Account         @relation(fields: [accountId], references: [id])
+  categories          TransactionCategory[]
+  invoiceItems        CardInvoiceItem[]
+
+  @@unique([accountId, externalId])
+  @@unique([accountId, deduplicationKey])
+  @@index([accountId, bookedAt(sort: Desc)])
+  @@index([type, bookedAt])
+  @@map("transactions")
+}
+
+model TransactionCategory {
+  id            String      @id @default(uuid()) @db.Uuid
+  transactionId String      @map("transaction_id") @db.Uuid
+  categoryId    String      @map("category_id") @db.Uuid
+  source        String      @db.VarChar(30)
+  confidence    Decimal?    @db.Decimal(5, 4)
+  isManual      Boolean     @default(false) @map("is_manual")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  category      Category    @relation(fields: [categoryId], references: [id])
+
+  @@unique([transactionId])
+  @@index([categoryId])
+  @@map("transaction_categories")
+}
+
+model CategorizationRule {
+  id          String    @id @default(uuid()) @db.Uuid
+  categoryId  String    @map("category_id") @db.Uuid
+  field       String    @db.VarChar(40)
+  operator    String    @db.VarChar(30)
+  pattern     String    @db.VarChar(255)
+  priority    Int       @default(100)
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  category    Category  @relation(fields: [categoryId], references: [id])
+
+  @@index([enabled, priority])
+  @@map("categorization_rules")
+}
+
+model Card {
+  closeDay       Int?          @map("close_day")
+  id             String        @id @default(uuid()) @db.Uuid
+  accountId      String        @map("account_id") @db.Uuid
+  externalId     String        @map("external_id") @db.VarChar(255)
+  displayName    String        @map("display_name") @db.VarChar(120)
+  maskedNumber   String?       @map("masked_number") @db.VarChar(32)
+  limitAmount    Decimal?      @map("limit_amount") @db.Decimal(19, 4)
+  availableLimit Decimal?      @map("available_limit") @db.Decimal(19, 4)
+  dueDay         Int?          @map("due_day")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  deletedAt      DateTime?     @map("deleted_at")
+  account        Account       @relation(fields: [accountId], references: [id])
+  invoices       CardInvoice[]
+
+  @@unique([accountId, externalId])
+  @@map("cards")
+}
+
+model CardInvoice {
+  id          String            @id @default(uuid()) @db.Uuid
+  cardId      String            @map("card_id") @db.Uuid
+  externalId  String?           @map("external_id") @db.VarChar(255)
+  dueDate     DateTime          @map("due_date") @db.Date
+  amount      Decimal?          @db.Decimal(19, 4)
+  status      String            @db.VarChar(40)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  card        Card              @relation(fields: [cardId], references: [id])
+  items       CardInvoiceItem[]
+
+  @@unique([cardId, externalId])
+  @@index([cardId, dueDate])
+  @@map("card_invoices")
+}
+
+model CardInvoiceItem {
+  id            String       @id @default(uuid()) @db.Uuid
+  invoiceId     String       @map("invoice_id") @db.Uuid
+  transactionId String       @map("transaction_id") @db.Uuid
+  invoice       CardInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  transaction   Transaction  @relation(fields: [transactionId], references: [id])
+
+  @@unique([invoiceId, transactionId])
+  @@map("card_invoice_items")
+}
+
+model SyncJob {
+  id          String        @id @default(uuid()) @db.Uuid
+  consentId   String        @map("consent_id") @db.Uuid
+  status      SyncJobStatus @default(PENDING)
+  cursor      String?       @db.VarChar(500)
+  attempt     Int           @default(0)
+  startedAt   DateTime?     @map("started_at")
+  finishedAt  DateTime?     @map("finished_at")
+  nextRunAt   DateTime?     @map("next_run_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  consent     Consent       @relation(fields: [consentId], references: [id])
+  logs        SyncLog[]
+
+  @@index([status, nextRunAt])
+  @@map("sync_jobs")
+}
+
+model SyncLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  syncJobId   String   @map("sync_job_id") @db.Uuid
+  level       String   @db.VarChar(20)
+  event       String   @db.VarChar(80)
+  message     String   @db.VarChar(500)
+  safeContext Json?    @map("safe_context")
+  createdAt   DateTime @default(now()) @map("created_at")
+  syncJob     SyncJob  @relation(fields: [syncJobId], references: [id], onDelete: Cascade)
+
+  @@index([syncJobId, createdAt])
+  @@map("sync_logs")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  action      String   @db.VarChar(80)
+  entityType  String?  @map("entity_type") @db.VarChar(80)
+  entityId    String?  @map("entity_id") @db.Uuid
+  safeContext Json?    @map("safe_context")
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model ProviderConnection {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  itemId      String    @unique @map("item_id")
+  name        String
+  status      String    @default("PENDING")
+  lastSync    DateTime? @map("last_sync")
+  error       String?
+  sandbox     Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  user        User      @relation(fields: [userId], references: [id])
+  accounts    Account[]
+  @@index([userId])
+  @@map("provider_connections")
+}
+
+model WebhookJob {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique @map("event_id")
+  event       String
+  itemId      String   @map("item_id")
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  availableAt DateTime @default(now()) @map("available_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@index([status, availableAt])
+  @@map("webhook_jobs")
+}

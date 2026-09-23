@@ -1,0 +1,26 @@
+{
+  "name": "financas-open-local",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @financas/api --filter @financas/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "db:generate": "pnpm --filter @financas/api prisma:generate",
+    "db:migrate": "pnpm --filter @financas/api prisma:migrate"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": ">=8.5.23",
+      "multer": ">=2.3.0",
+      "deepmerge-ts": ">=8.0.0"
+    }
+  }
+}
