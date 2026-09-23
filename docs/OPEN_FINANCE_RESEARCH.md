@@ -1,6 +1,6 @@
 # Pesquisa de integração Open Finance
 
-Pesquisa realizada em **10 de setembro de 2026**. As versões e exigências devem ser revalidadas imediatamente antes da Fase 4.
+Pesquisa realizada em **10 de setembro de 2026**. Versões, exigências e condições contratuais devem ser revalidadas antes de mudanças no provedor ou uso em produção.
 
 ## Resultado executivo
 

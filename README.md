@@ -16,7 +16,7 @@ Dashboard financeiro local com integração Pluggy Open Finance. Reúne contas, 
 - CSP, anti-framing, `nosniff`, HSTS e política de referência;
 - CI, CodeQL e Dependabot configurados para GitHub.
 
-Leia [Segurança](docs/SECURITY.md), [Threat model](docs/THREAT_MODEL.md) e [Operação segura](docs/OPERATIONS.md).
+Consulte o [índice da documentação](docs/README.md), a [visão geral do produto](docs/PRODUCT.md), [Segurança](docs/SECURITY.md), [Threat model](docs/THREAT_MODEL.md) e [Operação segura](docs/OPERATIONS.md).
 
 ## Requisitos
 

@@ -7,7 +7,8 @@ O dashboard é local, mas o Open Finance real não pode ser tratado como uma con
 ```text
 Browser local -> Next.js -> NestJS -> PostgreSQL
                               |
-                              +-> OpenFinanceProvider -> mock | provedor oficial futuro
+                              +-> Pluggy API
+Pluggy -> webhook HTTPS -> NestJS -> fila persistida -> sincronização
 ```
 
 No Docker, somente `127.0.0.1:3000` é publicado. Next.js encaminha `/api` ao NestJS pela rede interna. PostgreSQL não possui porta publicada.
@@ -18,7 +19,7 @@ No Docker, somente `127.0.0.1:3000` é publicado. Next.js encaminha `/api` ao Ne
 - **API:** autenticação, autorização, sincronização, categorização, auditoria e backup.
 - **Domínio:** contratos e tipos independentes do provedor.
 - **Persistência:** Prisma/PostgreSQL, constraints e índices.
-- **Adapters:** `MockOpenFinanceProvider`; depois, adapter do provedor habilitado. Os nomes Santander/Pamcard não implicam integração disponível.
+- **Integração:** `PluggyService` cria Connect Tokens, associa Items, importa dados, solicita atualizações e processa eventos recebidos pelo webhook.
 
 ## Modelo de dados
 
@@ -45,13 +46,13 @@ A ordem prevista é:
 5. manter categoria manual existente;
 6. registrar métricas sem payload financeiro bruto.
 
-As duas chaves possuem constraints únicas. A função canônica e os testes entram na Fase 3.
+As duas chaves possuem constraints únicas. Essa estratégia deve permanecer coberta por testes sempre que o formato de importação for alterado.
 
-## Sincronização planejada
+## Sincronização
 
-`POST /sync` cria um job idempotente; `GET /sync/status` mostra a última execução; `GET /sync/history` lista execuções sem payload sensível. Cada job utiliza cursor/paginação, timeout, retry com jitter e backoff, limite máximo de tentativas e tratamento explícito de 429.
+Após a autorização no widget, o frontend envia o `itemId` ao backend. O backend associa o Item ao usuário, importa contas, cartões, faturas e transações e atualiza o estado da conexão. A atualização pode ser solicitada para uma conexão ou para todas as conexões ativas.
 
-Webhooks só serão ativados se o provedor/documentação oficial os suportar. Um webhook real exige endpoint HTTPS acessível externamente; isso conflita com a premissa localhost e deverá ser isolado num relay/provedor oficial, nunca por port forwarding doméstico.
+O webhook valida um segredo compartilhado em tempo constante, aceita somente eventos conhecidos, devolve `202 Accepted` e registra o evento em uma fila persistida. O processamento pesado ocorre fora da resposta HTTP. Como o webhook precisa ser acessível pela Pluggy, ele exige uma URL HTTPS pública; não exponha o dashboard, PostgreSQL ou a API inteira por port forwarding doméstico.
 
 ## Autenticação local
 
