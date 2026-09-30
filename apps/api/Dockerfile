@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 RUN apk add --no-cache openssl && corepack enable && corepack prepare pnpm@10.17.1 --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
@@ -10,7 +10,7 @@ COPY apps/api apps/api
 COPY packages/domain packages/domain
 RUN pnpm --filter @financas/domain build && pnpm --filter @financas/api prisma:generate && pnpm --filter @financas/api build
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 RUN apk add --no-cache openssl && corepack enable && corepack prepare pnpm@10.17.1 --activate
 WORKDIR /app
 ENV NODE_ENV=production
