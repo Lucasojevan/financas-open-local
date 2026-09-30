@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 RUN corepack enable && corepack prepare pnpm@10.17.1 --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
@@ -10,7 +10,7 @@ COPY apps/web apps/web
 ENV INTERNAL_API_URL=http://backend:3001
 RUN pnpm --filter @financas/web build
 
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
